@@ -65,6 +65,7 @@ public class AbfsRestOperation {
   private int bufferOffset;
   private int bufferLength;
   private int retryCount = 0;
+  private boolean isAppendBlobAppend;
 
   private AbfsHttpOperation result;
   private AbfsCounters abfsCounters;
@@ -134,6 +135,7 @@ public class AbfsRestOperation {
             || AbfsHttpConstants.HTTP_METHOD_PATCH.equals(method));
     this.sasToken = sasToken;
     this.abfsCounters = client.getAbfsCounters();
+    this.isAppendBlobAppend = false;
   }
 
   /**
@@ -158,12 +160,14 @@ public class AbfsRestOperation {
                     byte[] buffer,
                     int bufferOffset,
                     int bufferLength,
-                    String sasToken) {
+                    String sasToken,
+                    boolean isAppendBlobAppend) {
     this(operationType, client, method, url, requestHeaders, sasToken);
     this.buffer = buffer;
     this.bufferOffset = bufferOffset;
     this.bufferLength = bufferLength;
     this.abfsCounters = client.getAbfsCounters();
+    this.isAppendBlobAppend = isAppendBlobAppend;
   }
 
   /**
@@ -185,6 +189,7 @@ public class AbfsRestOperation {
       try {
         LOG.debug("Retrying REST operation {}. RetryCount = {}",
             operationType, retryCount);
+
         Thread.sleep(client.getRetryPolicy().getRetryInterval(retryCount));
       } catch (InterruptedException ex) {
         Thread.currentThread().interrupt();
@@ -192,6 +197,10 @@ public class AbfsRestOperation {
     }
 
     if (result.getStatusCode() >= HttpURLConnection.HTTP_BAD_REQUEST) {
+      if (this.isAppendBlobAppend && retryCount > 0 && result.getStorageErrorCode().equals("InvalidQueryParameterValue")) {
+        //Do length check once available.
+        return;
+      }
       throw new AbfsRestOperationException(result.getStatusCode(), result.getStorageErrorCode(),
           result.getStorageErrorMessage(), null, result);
     }
